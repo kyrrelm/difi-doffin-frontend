@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+	<head>
+	</head>
+	<body>
+		<div ng-app='DoffinSearch' ng-controller='DoffinCtrl'>
+
+			<!-- Searchfield -->
+			<section>
+          		<form ng-submit='search()'>
+            		<input ng-model='searchTerm' type='text'>
+            		<input type='submit' value='Search for doffin data'>
+          		</form>
+        	</section>
+
+        	<!-- Results -->
+        	<section>
+				<div ng-hide='doffinData.length'>No results</div>
+				<article ng-cloak ng-repeat='data in doffinData'>
+					<p>{{data}}</p>
+				</article>
+				<div ng-cloak ng-hide='allResults'>
+					<a ng-click='loadMore()'>Load more...</a>
+				</div>
+        	</section>
+		</div>
+
+		<!-- Includes -->
+		<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.18/angular.js"></script>
+		<script src="elasticsearch.js"></script>
+		<script src="elasticsearch.angular.js"></script>
+
+		<!-- Custom code -->
+		<script type="text/javascript">
+		/** 
+		 * Add module to angular 
+		 */
+		window.DoffinSearch = angular.module('DoffinSearch', ['elasticsearch'],
+		    ['$locationProvider', function($locationProvider){
+		        $locationProvider.html5Mode(true);
+		    }]
+		);
+
+		/**
+		 * Create a service to power calls to Elasticsearch. We only need to
+		 * use the _search endpoint.
+		 */
+		DoffinSearch.factory('DoffinService',
+		    ['$q', 'esFactory', '$location', function($q, elasticsearch, $location){
+		        var client = elasticsearch({
+		            host: "10.243.202.49:9200"
+		    	});
+
+    	        /**
+		         * Search for term.
+		         * Returns a promise.
+		         */
+		        var search = function(term, offset){
+		            var deferred = $q.defer();
+		            var query = {
+		                "match": {
+		                    "_all": term
+		                }
+		            };
+
+		            client.search({
+		                "body": {
+    	                    "size": 10,
+                    		"from": (offset || 0) * 10,
+		                    "query": query
+		                }
+		            }).then(function(result) {
+		                var ii = 0, hits_in, hits_out = [];
+		                hits_in = (result.hits || {}).hits || [];
+		                for(;ii < hits_in.length; ii++){
+		                    hits_out.push(hits_in[ii]._source);
+		                }
+		                deferred.resolve(hits_out);
+		            }, deferred.reject);
+
+		            return deferred.promise;
+		        };
+
+		        // Module method settup:
+		        return {
+		            "search": search
+		        };
+		    }]
+		);
+
+		/**
+		 *
+		 */
+		DoffinSearch.controller('DoffinCtrl',
+    		['DoffinService', '$scope', '$location', function(doffinData, $scope, $location){
+				// Initialize the scope defaults.
+		        $scope.doffinData = [];     // An array of all doffin results
+		        $scope.page = 0;            // A counter to keep track of our current loaded page
+		        $scope.allResults = false;  // Whether or not all results have been found.
+
+		        // Set searchterm
+        		$scope.searchTerm = $location.search().q;
+
+        		/**
+		         * A fresh search. Reset the scope variables to their defaults, set
+		         * the q query parameter, and load more results.
+		         */
+		        $scope.search = function(){
+		            $scope.page = 0;
+		            $scope.doffinData = [];
+		            $scope.allResults = false;
+		            $location.search({'q': $scope.searchTerm});
+		            $scope.loadMore();
+		        };
+
+		        /**
+		         * Load data, 10 per page.
+		         */
+		        $scope.loadMore = function(){
+		            doffinData.search($scope.searchTerm, $scope.page++).then(function(results){
+		                if(results.length !== 10){
+		                    $scope.allResults = true;
+		                }
+
+		                var ii = 0;
+		                for(;ii < results.length; ii++){
+		                    $scope.doffinData.push(results[ii]);
+		                }
+		            });
+		        };
+
+		        // Load results on first run
+        		$scope.loadMore();
+			}]
+		);
+		</script>
+	</body>
+</html>
